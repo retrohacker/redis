@@ -266,6 +266,30 @@ int startAppendOnly(void) {
     return C_OK;
 }
 
+void generateBlockHash() {
+    SHA1_CTX ctx;
+    unsigned char hash[20];
+    SHA1Init(&ctx);
+    SHA1Update(&ctx, (unsigned char *)server.aof_buf, sdslen(server.aof_buf));
+
+    if (server.aof_hash != NULL) {
+        SHA1Update(&ctx, (unsigned char *)server.aof_hash, sdslen(server.aof_hash));
+    }
+
+    SHA1Final(hash, &ctx);
+    server.aof_hash = sdsnew("");
+    char hashstr[3];
+    for(int i = 0; i < 20; i++) {
+        snprintf(hashstr, 3, "%02x", hash[i]);
+        server.aof_hash = sdscat(server.aof_hash, hashstr);
+    }
+
+    server.aof_buf = sdscat(server.aof_buf, "BH\r\n");
+    server.aof_buf = sdscatsds(server.aof_buf, server.aof_hash);
+    server.aof_buf = sdscat(server.aof_buf, "\r\n");
+    SHA1Final(hash, &ctx);
+}
+
 /* Write the append only file buffer on disk.
  *
  * Since we are required to write the AOF before replying to the client,
@@ -322,6 +346,7 @@ void flushAppendOnlyFile(int force) {
      * there is much to do about the whole server stopping for power problems
      * or alike */
 
+    generateBlockHash();
     latencyStartMonitor(latency);
     nwritten = write(server.aof_fd,server.aof_buf,sdslen(server.aof_buf));
     latencyEndMonitor(latency);
